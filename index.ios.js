@@ -25,7 +25,6 @@ import Calendar from 'react-native-calendar';
 import * as firebase from 'firebase';
 
 // Initialize Firebase
-/*
 const firebaseConfig = {
   apiKey: "AIzaSyC2MswomuyAqgT8YidVIOEDW3eSdPdnFy0",
   authDomain: "habit-7e89d.firebaseapp.com",
@@ -34,7 +33,18 @@ const firebaseConfig = {
   messagingSenderId: "108356244031"
 };
 const firebaseApp = firebase.initializeApp(firebaseConfig);
-*/
+var dbRef = firebaseApp.database().ref();
+
+const auth = firebase.auth();
+
+// auth.signInWithEmailAndPassword(email, pass);
+
+var email = 'dude@email.com',
+    pass  = 'helloWorld12345';
+
+auth.createUserWithEmailAndPassword(email, pass);
+
+// import Activity from './src/Activity';
 
 var Activity = function(id, category, startDate, endDate) {
     this.id = id;
@@ -116,7 +126,7 @@ Activity.prototype.getDuration = function(date) {
 
 var Category = function(name, color) {
   this.name = name;
-  this.color = color || '#CCCCCC';
+  this.color = color || '#'+Math.floor(Math.random()*16777215).toString(16);
   this.activities = [];
 }
 
@@ -177,6 +187,10 @@ var activities = [
 var sliceColor = ['#CCCCCC', '#CC0000', '#4CAF50', '#00CC00', '#00CCCC'];
 var chart_wh = 260;
 
+var user = new User('dude', 'dude@email.com');
+
+dbRef.push(user);
+
 export default class habit extends Component {
   constructor(props) {
     super(props);
@@ -187,12 +201,12 @@ export default class habit extends Component {
         durations: [],
         colors: []
       },
-      nav: 'loading',
       startTime: null,
       endTime: null,
       running: false,
       timeElapsed: null,
       showCalendar: false,
+      route: 0,
     }
   }
 
@@ -228,12 +242,29 @@ export default class habit extends Component {
   }
 
   componentDidMount() {
-    this.setState({nav: 'day'});
+    this.setState({route: 0});
+  }
+
+  renderMain() {
+
   }
 
   render() {
+    if(this.state.route === 1) return this.loading();
+    if(this.state.route === 2) return this.renderNewActivity();
+    if(this.state.route === 3) return this.renderNewCategory();
     return (
-      <Swiper showsButtons={true}>
+      <Swiper
+        style={{backgroundColor: '#282828'}}
+        bounces={true}
+        loop={false}
+        index={1}
+        dot={<View style={{backgroundColor: '#545454', width: 13, height: 13, borderRadius: 7, marginLeft: 7, marginRight: 5}} />}
+        activeDot={<View style={{backgroundColor: '#fff', width: 17, height: 17, borderRadius: 8, marginLeft: 8, marginRight: 8}} />}
+        paginationStyle={{
+              bottom: 24
+        }}
+      >
         {this.renderProfile()}
         {this.renderDay()}
         {this.renderTimer()}
@@ -332,29 +363,72 @@ export default class habit extends Component {
     )
   }
 
+  pressBack() {
+    if(this.state.route > 0) { this.setState({route: this.state.route - this.state.route}) }
+  }
+
+  pressActivitySaveButton() {
+    const startTime = moment(this.state.activityStartTime);
+    const endTime   = moment(this.state.activityEndTime);
+
+    let activity = new Activity(activities.length+1, this.state.currentCategory, startTime, endTime);
+    activities.push(activity)
+    this.setState({currentCategory: null, activityStartTime: null, activityEndTime: null});
+  }
+
   renderNewActivity() {
     return (
       <View style={styles.container}>
-        <View>
-          <Text>
+        <TouchableHighlight
+          onPress={this.pressBack.bind(this)}
+          style={{padding: 30, flex:.1}}
+        >
+          <Text style={styles.defaultFont}>
+            Back
+          </Text>
+        </TouchableHighlight>
+        <View style={{flex:.2, alignItems: 'center'}}>
+          <Text style={[styles.defaultFont, {fontSize: 20}]}>
             Add new activity
           </Text>
         </View>
-        <View>
-          <Text>
+        <View style={{flex:.2}}>
+          <Text style={styles.defaultFont}>
+            Category
+          </Text>
+          <TextInput
+            style={{height: 40, borderWidth: 2, padding: 10}}
+            onChangeText={(currentCategory) => this.setState({currentCategory})}
+            value={this.state.currentCategory}
+          />
+        </View>
+        <View style={{flex:.2}}>
+          <Text style={styles.defaultFont}>
             Start Time
           </Text>
+          <TextInput
+            style={{height: 40, borderWidth: 2, padding: 10}}
+            onChangeText={(activityStartTime) => this.setState({activityStartTime})}
+            value={this.state.activityStartTime}
+          />
         </View>
-        <View>
-          <Text>
+        <View style={{flex:.2}}>
+          <Text style={styles.defaultFont}>
             End Time or Duration
           </Text>
+          <TextInput
+            style={{height: 40, borderWidth: 2, padding: 10}}
+            onChangeText={(activityEndTime) => this.setState({activityEndTime})}
+            value={this.state.activityEndTime}
+          />
         </View>
-        <View>
-          <Text>
-            Save btn ///// Delete btn
+        <TouchableHighlight
+          onPress={this.pressActivitySaveButton.bind(this)}
+        >
+          <Text style={[styles.defaultFont,{fontSize: 20, fontWeight: '300'}]}>
+            SAVE
           </Text>
-        </View>
+        </TouchableHighlight>
       </View>
     )
   }
@@ -387,6 +461,18 @@ export default class habit extends Component {
     )
   }
 
+  getCalendarEvents() {
+    var arr = [];
+    Object.keys(days).map(function(key, index) {
+      var day = {
+        date: key,
+        hasEventCircle: {backgroundColor: 'lightslategrey'}
+      }
+      arr.push(day);
+    });
+    return arr;
+  }
+
   renderDay() {
     var pie = this.getPie();
     var durations = pie.durations;
@@ -404,19 +490,24 @@ export default class habit extends Component {
           <Calendar
             ref='calendar'
             eventDates={['2016-11-19', '2016-11-20', '2016-11-21', '2016-11-22']}
-            events={[{date: '2016-11-20', hasEventCircle: {backgroundColor: 'powderblue'}}]}
+            events={this.getCalendarEvents()}
             showControls
             titleFormat={'MMMM YYYY'}
             prevButtonText={'Prev'}
             nextButtonText={'Next'}
+            customStyle={{
+              calendarContainer: {backgroundColor: '#545454'},
+              day: {fontSize: 16, color: '#282828'},
+              dayButton: {borderTopColor: '#545454'},
+              calendarHeading: {borderColor: '#343434'},
+              selectedDayCircle: {backgroundColor: '#282828'},
+              currentDayCircle: {backgroundColor: 'cadetblue'},
+              currentDayText: {color: '#fff', fontWeight: '600'}
+            }}
             onDateSelect={(date) => this.setState({ selectedDate: moment(date) })}
-            onTouchPrev={() => console.log('Back TOUCH')}     // eslint-disable-line no-console
-            onTouchNext={() => console.log('Forward TOUCH')}  // eslint-disable-line no-console
-            onSwipePrev={() => console.log('Back SWIPE')}     // eslint-disable-line no-console
-            onSwipeNext={() => console.log('Forward SWIPE')}  // eslint-disable-line no-console
           />
           <TouchableHighlight
-            style={{borderWidth: 2, paddingTop: 50}}
+            style={{borderBottomWidth: 1, paddingTop: 50, backgroundColor: '#545454'}}
             onPress={() => {
               if(this.state.showCalendar) {
                 _scrollView.scrollTo({y: 285});
@@ -482,10 +573,14 @@ export default class habit extends Component {
 
   pressSaveButton() {
     if(this.state.startTime && !this.state.running && this.state.timeElapsed >= 120000) {
-      new Activity(6, 'cooking', this.state.startTime, moment());
+      new Activity(6, 'unknown', this.state.startTime, moment());
       //activities.push(activity);
       this.setState({startTime: null, running: false, timeElapsed: null, endTime: null, nav:'day'});
     }
+  }
+
+  pressAddButton() {
+    this.setState({route: 2});
   }
 
   renderTimer() {
@@ -538,7 +633,7 @@ export default class habit extends Component {
         <View style={timerStyles.footer}>
           <TouchableHighlight
             style={timerStyles.sqrButton}
-            onPress={function(){}}
+            onPress={this.pressAddButton.bind(this)}
           >
             <Text style={[styles.defaultFont,{fontSize: 20, fontWeight: '300'}]}>
               ADD
