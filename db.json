@@ -1,0 +1,24 @@
+{
+  "users":
+  [
+    {
+      "userid" : "#4kb0#45",
+      "email" : "email",
+    },
+  ],
+  "categories":
+  [
+    {
+      "name": "name",
+      "color": "color",
+    }
+  ],
+  "activities":
+  [
+    {
+      "startDate" : "date",
+      "endDate" : "date",
+      "category" : "category",
+    },
+  ]
+}

@@ -33,18 +33,32 @@ const firebaseConfig = {
   messagingSenderId: "108356244031"
 };
 const firebaseApp = firebase.initializeApp(firebaseConfig);
-var dbRef = firebaseApp.database().ref();
+var dbRef = firebaseApp.database().ref(),
+    userDB = null,
+    proRef = null,
+    catRef = null,
+    actRef = null;
+
+var db = firebaseApp.database();
 
 const auth = firebase.auth();
 
 // auth.signInWithEmailAndPassword(email, pass);
 
 var email = 'dude@email.com',
-    pass  = 'helloWorld12345';
+    pass  = 'helloWorld12345',
+    currentUser = null;
 
-auth.createUserWithEmailAndPassword(email, pass);
+function createUser(email, pass) {
+  auth.createUserWithEmailAndPassword(email, pass);
+}
 
-// import Activity from './src/Activity';
+function signIn(email, pass) {
+  auth.signInWithEmailAndPassword(email, pass);
+}
+
+//createUser(email, pass);
+signIn(email, pass);
 
 var Activity = function(id, category, startDate, endDate) {
     this.id = id;
@@ -176,7 +190,7 @@ var categories = {
 };
 var days = {};
 var activities = [
-  new Activity(0, 'sleeping', moment('2016-11-22 23:00:00'), moment('2016-11-23 08:00:00')),
+  new Activity(0, 'sleeping', moment('2016-11-16 23:00:00'), moment('2016-11-17 08:00:00')),
   new Activity(1, 'cooking', moment('2016-11-20 12:00:00'), moment('2016-11-20 13:00:00')),
   new Activity(2, 'watchingTV', moment('2016-11-20 13:00:00'), moment('2016-11-20 15:30:00')),
   new Activity(3, 'studying', moment('2016-11-20 16:00:00'), moment('2016-11-20 18:30:00')),
@@ -184,12 +198,7 @@ var activities = [
   new Activity(5, 'sleeping', moment('2016-11-20 23:00:00'), moment('2016-11-21 08:00:00'))
 ];
 
-var sliceColor = ['#CCCCCC', '#CC0000', '#4CAF50', '#00CC00', '#00CCCC'];
-var chart_wh = 260;
-
 var user = new User('dude', 'dude@email.com');
-
-dbRef.push(user);
 
 export default class habit extends Component {
   constructor(props) {
@@ -207,6 +216,18 @@ export default class habit extends Component {
       timeElapsed: null,
       showCalendar: false,
       route: 0,
+      currentActId: null,
+      categories: {},
+      activities: {},
+      days: null,
+      database:
+        {
+          userDB: null,
+          proRef: null,
+          catRef: null,
+          actRef: null,
+        },
+      currentUser: null,
     }
   }
 
@@ -242,7 +263,114 @@ export default class habit extends Component {
   }
 
   componentDidMount() {
-    this.setState({route: 0});
+    this.setState({route: 1});
+    var self = this;
+
+    firebase.auth().onAuthStateChanged(function(authData) {
+      if(authData) {
+
+        self.setState({
+          currentUser: {
+            uid: authData.uid,
+            email: authData.email
+          }
+        });
+
+        var success = [false, false]
+
+        var userDB = db.ref('users/' + authData.uid),
+            proRef = db.ref('users/' + authData.uid + 'profile'),
+            catRef = userDB.child('categories'),
+            actRef = userDB.child('activities');
+
+        var name = 'sleeping',
+            color = '#539492';
+
+        catRef.child(name).set({
+          name: name,
+          color: color
+        });
+        /*
+        actRef.push({
+          category: 'coding',
+          startDate: '2016-12-13 15:30:00',
+          endDate: '2016-12-13 18:30:00'
+        });
+        */
+
+
+        proRef.once('value', function(snapshot) {
+          if(!snapshot.val()) {
+            proRef.set(currentUser);
+          }
+        });
+
+        catRef.once('value', function(snapshot) {
+            self.setState({categories: snapshot.val()});
+            success[0] = true;
+
+            if(success[0] && success[1]) {
+              self.setState({route: 0});
+            }
+        });
+
+        actRef.once('value', function(snapshot) {
+            snapshot.forEach((child) => {
+              var id = child.key;
+              if(!activities[id]) {
+                var category = child.val().category,
+                    startDate = child.val().startDate,
+                    endDate = child.val().endDate;
+
+                var activity = new Activity(id, category, moment(startDate), moment(endDate));
+                activities[id] = activity;
+              }
+
+            });
+
+            self.setState({activities: snapshot.val()});
+            success[1] = true;
+            if(success[0] && success[1]) {
+              self.setState({route: 0});
+            }
+        });
+
+        self.setState(
+          {
+            database: {
+                userDB: userDB,
+                proRef: proRef,
+                catRef: catRef,
+                actRef: actRef,
+              }
+          }
+        );
+
+
+      } else {
+        currentUser = null;
+      }
+
+      actRef.on('child_added', function(snapshot) {
+          var id = snapshot.key;
+          if(!activities[id]) {
+            var category = snapshot.val().category,
+                startDate = snapshot.val().startDate,
+                endDate = snapshot.val().endDate;
+
+            var activity = new Activity(id, category, moment(startDate), moment(endDate));
+            activities[id] = activity;
+          }
+      });
+
+      catRef.on('child_added', function(snapshot) {
+          var key = snapshot.key;
+          if(!categories[key]) {
+            categories[key] = new Category(key, snapshot.val().color);
+          }
+      });
+
+    });
   }
 
   renderMain() {
@@ -253,6 +381,7 @@ export default class habit extends Component {
     if(this.state.route === 1) return this.loading();
     if(this.state.route === 2) return this.renderNewActivity();
     if(this.state.route === 3) return this.renderNewCategory();
+    if(this.state.route === 4) return this.renderActivity(this.state.currentActId);
     return (
       <Swiper
         style={{backgroundColor: '#282828'}}
@@ -287,17 +416,17 @@ export default class habit extends Component {
       <View style={[styles.container, {paddingTop: 20, alignItems: 'center'}]}>
         <View style={{flex:.1}}>
           <Text style={styles.defaultFont}>
-            "Navigation bar"
+            {this.state.categories.sleeping ? this.state.categories.sleeping.name : ''}
           </Text>
         </View>
         <View style={{flex:.2}}>
           <Text style={styles.defaultFont}>
-            Avatar or something
+            {this.state.currentUser ? this.state.currentUser.email : ''}
           </Text>
         </View>
         <View style={{flex:.7}}>
           <Text style={styles.defaultFont}>
-            Statistics maybe
+            {this.state.route}
           </Text>
         </View>
       </View>
@@ -371,8 +500,14 @@ export default class habit extends Component {
     const startTime = moment(this.state.activityStartTime);
     const endTime   = moment(this.state.activityEndTime);
 
-    let activity = new Activity(activities.length+1, this.state.currentCategory, startTime, endTime);
-    activities.push(activity)
+    //let activity = new Activity(, this.state.currentCategory, startTime, endTime);
+
+    this.state.database.actRef.push({
+      category: this.state.currentCategory,
+      startDate: startTime.format('YYYY-MM-DD HH:MM:SS'),
+      endDate: endTime.format('YYYY-MM-DD HH:MM:SS')
+    });
+
     this.setState({currentCategory: null, activityStartTime: null, activityEndTime: null});
   }
 
@@ -434,29 +569,68 @@ export default class habit extends Component {
   }
 
   renderActivity(id) {
+    var self     = this;
     var activity = activities[id];
+    var category,
+        start,
+        end;
     return (
       <View style={styles.container}>
-        <View>
-          <Text>
-            Category {activity.category.name}
+        <TouchableHighlight
+          onPress={this.pressBack.bind(this)}
+          style={{padding: 30, flex:.1}}
+        >
+          <Text style={styles.defaultFont}>
+            Back
+          </Text>
+        </TouchableHighlight>
+        <View style={{flex:.2, alignItems: 'center'}}>
+          <Text style={[styles.defaultFont, {fontSize: 20}]}>
+            Edit Activity
           </Text>
         </View>
-        <View>
+        <View style={{flex:.2}}>
+          <Text style={styles.defaultFont}>
+            Category:
+          </Text>
           <Text>
-            Start Date: {activity.startDate.format('ll')}
+            Change a category
           </Text>
         </View>
-        <View>
-          <Text>
-            End Date: {activity.endDate.format('ll')}
+        <View style={{flex:.2}}>
+          <Text style={styles.defaultFont}>
+            Start time
           </Text>
+          <TextInput
+            style={{height: 40, borderWidth: 2, padding: 10}}
+            onChangeText={(e) => {start = e;}}
+            value={activity.startDate.format('YYYY-MM-DD HH:MM:SS')}
+          />
         </View>
-        <View>
-          <Text>
-            Edit btn ///// Delete btn
+        <View style={{flex:.2}}>
+          <Text style={styles.defaultFont}>
+            End Time or Duration {activity.id}
           </Text>
+          <TextInput
+            style={{height: 40, borderWidth: 2, padding: 10}}
+            onChangeText={(e) => {end = e;}}
+            value={activity.endDate.format('YYYY-MM-DD HH:MM:SS')}
+          />
         </View>
+        <TouchableHighlight
+          onPress={function() {
+            self.state.database.actRef.child(activity.id).set({
+              category: activity.category,
+              startDate: activity.startDate.format('YYYY-MM-DD HH:MM:SS'),
+              endDate: activity.endDate.format('YYYY-MM-DD HH:MM:SS')
+            });
+            delete activities[id];
+          }}
+        >
+          <Text style={[styles.defaultFont,{fontSize: 20, fontWeight: '300'}]}>
+            SAVE EDIT
+          </Text>
+        </TouchableHighlight>
       </View>
     )
   }
@@ -532,12 +706,12 @@ export default class habit extends Component {
           </View>
           <View style={{alignSelf:'center'}}>
             <PieChart
-              chart_wh={chart_wh}
+              chart_wh={260}
               series={durations}
               sliceColor={pie.colors}
             />
           </View>
-          <View style={{paddingLeft: 30, paddingTop: 20}}>
+          <View style={{paddingLeft: 30, paddingTop: 20, paddingRight: 30}}>
             {this.categoryList(pie, this)}
           </View>
         </ScrollView>
@@ -662,11 +836,8 @@ export default class habit extends Component {
   }
   */
 
-  addActivity(date, category) {
-  }
-
-  pressActivityListItem() {
-    return;
+  pressActivityListItem(key, parent) {
+    parent.setState({currentActId: key, route: 4});
   }
 
   categoryList(pie, parent) {
@@ -678,7 +849,7 @@ export default class habit extends Component {
     return pie.activities.map(function(obj, index){
       return (
         <TouchableHighlight key={index}
-          onPress={parent.pressActivityListItem.bind(parent)}
+          onPress={() => {parent.pressActivityListItem(obj.id, parent)}}
           style={{borderRadius: 10, padding: 2}}
         >
           <View key={obj.id} style={{flexDirection: 'row', padding: 3}}>
